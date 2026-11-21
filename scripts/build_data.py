@@ -145,6 +145,11 @@ def strip_links(s):
     return re.sub(r"'{2,}", "", s).strip()
 
 
+def first_target(s):
+    m = LINK.search(s)
+    return m.group(1).strip() if m else None
+
+
 def parse_recipes(wikitext):
     """Lines like:  * [[A]] 🔗 [[B]] > '''C'''   (🔥 = furnace, 🔗 = combine)."""
     section = None
@@ -167,13 +172,14 @@ def parse_recipes(wikitext):
         if not left:
             continue
         method = "furnace" if "🔥" in left else "combine" if "🔗" in left else "other"
-        ingredients = []
+        ingredients, targets = [], []
         for part in re.split(r"🔥|🔗|\+", left):
             part = re.sub(r"^[\s🏝️🏝]+", "", part)
             part = re.sub(r"\(([^)]*)\)", "", part) if method == "furnace" else part
             n = strip_links(part)
             if n:
                 ingredients.append(n)
+                targets.append(first_target(part) or n)
         result = strip_links(right)
         if ingredients and result:
             recipes.append({
@@ -181,6 +187,8 @@ def parse_recipes(wikitext):
                 "method": method,
                 "from": ingredients,
                 "to": result,
+                "fromT": targets,
+                "toT": first_target(right) or result,
                 "raw": strip_links(body),
             })
     return recipes
