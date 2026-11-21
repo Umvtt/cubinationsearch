@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cubination Index – search cubes, armor, weapons & more</title>
+<meta name="description" content="Fan-made search for the Roblox game Cubination. Look up cubes, armor, weapons, enemies, islands and recipes.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3l12 6v14l-12 6L4 23V9z' fill='%23e8590c'/%3E%3Cpath d='M16 3l12 6-12 6L4 9z' fill='%23ffa94d'/%3E%3Cpath d='M16 15v14L4 23V9z' fill='%23c2410c'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#/" aria-label="Cubination Index home">
+    <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+      <path d="M16 3l12 6v14l-12 6L4 23V9z" fill="#e8590c"/>
+      <path d="M16 3l12 6-12 6L4 9z" fill="#ffa94d"/>
+      <path d="M16 15v14L4 23V9z" fill="#b8400a"/>
+    </svg>
+    <span>Cubination<b>Index</b></span>
+  </a>
+  <span class="disclaimer">Fan-made &middot; not affiliated with the game</span>
+</header>
+
+<main>
+  <section id="searchbar">
+    <label for="q" class="lbl">What are you looking for?</label>
+    <div class="box">
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="steel armor, regen coil, raider, iron cube…">
+      <kbd title="Press / to search">/</kbd>
+    </div>
+    <div id="cats" class="cats" role="tablist" aria-label="Filter by category"></div>
+  </section>
+
+  <section id="list" aria-live="polite"></section>
+  <article id="page" hidden></article>
+</main>
+
+<footer>
+  <p>All info comes from the <a id="wikilink" href="https://cubination.fandom.com" target="_blank" rel="noopener">Cubination Wiki</a>
+  (text under <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA</a>).
+  Spotted something wrong? Fix it on the wiki and it shows up here after the next refresh.
+  <span id="built"></span></p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
