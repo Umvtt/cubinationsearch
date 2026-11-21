@@ -131,6 +131,8 @@ def clean_html(html):
     out = "".join(c.out)
     out = re.sub(r"<(p|li|span|b|strong|i|em)>\s*</\1>", "", out)
     out = re.sub(r"(<br>\s*){3,}", "<br><br>", out)
+    out = re.sub(r"<td>\s*File:[^<]*</td>", "", out)          # leftover gif/file names in tables
+    out = re.sub(r"<th>\s*GIF\s*</th>", "", out)
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
     text = re.sub(r"\s+", " ", "".join(c.text)).strip()
     return out, text
@@ -171,7 +173,7 @@ def parse_recipes(wikitext):
         left, _, right = body.rpartition(">")
         if not left:
             continue
-        method = "furnace" if "🔥" in left else "combine" if "🔗" in left else "other"
+        method = "furnace" if "🔥" in left else "combine" if ("🔗" in left or re.search(r"\s\+\s", left)) else "other"
         ingredients, targets = [], []
         for part in re.split(r"🔥|🔗|\+", left):
             part = re.sub(r"^[\s🏝️🏝]+", "", part)
@@ -239,7 +241,8 @@ def all_files():
 def find_img(name, files):
     """Try the name itself, then common wiki naming variants."""
     base = re.sub(r"\s*\(.*", "", name).strip()
-    cands = [base, base + " Cube", re.sub(r"\s*Cube$", "", base, flags=re.I), base + " Ingot",
+    cands = [base, base.replace("Golden", "Gold"), base.replace("Greatsword", "Great Sword"), base.replace(" ", "-"),
+             base + " Cube", re.sub(r"\s*Cube$", "", base, flags=re.I), base + " Ingot",
              re.sub(r"\s*Ingot$", "", base, flags=re.I), base.rstrip("s"), base + " Sword"]
     for c in cands:
         if c and nkey(c) in files:
@@ -262,10 +265,10 @@ def main():
             continue
         html, text = clean_html(d["text"]["*"])
         wt = d["wikitext"]["*"]
-        if re.match(r"^\s*#redirect", wt, re.I) or len(text) < 3:
+        if re.match(r"^\s*#redirect", wt, re.I):
             continue
         # first sentence-ish summary
-        summary = re.sub(r"\s+", " ", text)[:220]
+        summary = re.sub(r"\s+", " ", text)[:220] or "No description on the wiki yet."
         ref = re.search(r"\[\[(?:File|Image):([^|\]]+)", wt)
         img = meta["img"] or find_img(title, files)
         if not img and ref and nkey(re.sub(r"\.[A-Za-z]+$", "", ref.group(1))) in files:

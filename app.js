@@ -1,23 +1,24 @@
 (() => {
   const $ = (s) => document.querySelector(s);
-  const q = $("#q"), list = $("#list"), pageEl = $("#page"), catsEl = $("#cats"), craftEl = $("#craft"), quickEl = $("#quick");
+  const q = $("#q"), list = $("#list"), pageEl = $("#page"), catsEl = $("#cats"), craftEl = $("#craft"), quickEl = $("#quick"), mapEl = $("#mapview");
+  const modal = $("#modal"), dock = $("#dock"), fx = $("#fx");
   const PAGE_SIZE = 40;
   const HIDE_CATS = new Set(["Pages with broken file links", "Stubs", "Stub", "Cubination Wiki", "Community", "Images", "Media", "Maintenance", "Candidates for deletion", "Documentation templates"]);
   const MAIN_CATS = ["Armor", "Cubes", "Weapons", "Equipment", "Enemies", "Islands"];
   const QUICK = ["Armor Cube", "Steel Sword", "Regen Coil", "Raider", "Iron Cube"];
 
   let pages = [], byTitle = new Map(), cat = "All", shown = PAGE_SIZE, selected = -1, currentResults = [], showAllCats = false;
-  let recipes = [], ingredients = new Map(), extraImgs = {}; // global recipe index
-  const nk = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
-  const imgFor = (name, pg) => (pg && pg.img) || extraImgs[nk(name)] || null;
+  let recipes = [], ingredients = new Map(), extraImgs = {};
 
   /* ---------- helpers ---------- */
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const norm = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const nk = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
   const slug = (t) => encodeURIComponent(t.replace(/ /g, "_"));
   const noEmoji = (s) => s.replace(/🔗️?/g, "+").replace(/🔥️?/g, "in").replace(/🏝️?/g, "").replace(/\s+/g, " ");
-  const pageFor = (name, target) => byTitle.get(norm(target || "")) || byTitle.get(norm(name));
+  const pageFor = (name, target) => byTitle.get(norm(name)) || byTitle.get(norm(target || ""));
   const splitAlt = (n) => { const m = n.match(/^(.*?)\s*\((.*)\)\s*$/); return m ? [m[1], m[2]] : [n, ""]; };
+  const imgFor = (name, pg) => (pg && pg.img) || extraImgs[nk(name)] || null;
 
   /* ---------- animated icons (inline SVG, animated in CSS) ---------- */
   const ICON = {
@@ -39,21 +40,25 @@
     ingot: ln("ingot", '<path d="M2.5 17.5l3-8h13l3 8z"/><path d="M8 9.5l-1 8M16 9.5l1 8"/>'),
     star: ln("star", '<path d="M12 2.5l2.9 6 6.6.8-4.9 4.5 1.3 6.5L12 17l-5.9 3.3 1.3-6.5L2.5 9.3l6.6-.8z"/>'),
     gear: ln("gear", '<circle cx="12" cy="12" r="3.4"/><path d="M12 2.5v3.2M12 18.3v3.2M2.5 12h3.2M18.3 12h3.2M5.3 5.3l2.3 2.3M16.4 16.4l2.3 2.3M18.7 5.3l-2.3 2.3M7.6 16.4l-2.3 2.3"/>'),
+    map: ln("map", '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>'),
+    lock: ln("lock", '<rect x="5" y="11" width="14" height="10" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+    table: ln("table", '<path d="M3 8l9-5 9 5v9l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v9"/><path d="M8 5.5l9 5"/>'),
+    pin: ln("pin", '<path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>'),
+    hand: ln("hand", '<path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4.5a1.5 1.5 0 0 1 3 0V11M14 10.5V6a1.5 1.5 0 0 1 3 0v7c0 4-2.5 7-6 7-3 0-4.5-2-6-5l-1-2a1.5 1.5 0 0 1 2.5-1.5L8 14"/>'),
     on: ln("snd on", '<path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path class="w1" d="M16 9.2c1.3 1.7 1.3 4.1 0 5.6"/><path class="w2" d="M18.7 6.6c3 3 3 7.8 0 10.8"/>'),
     off: ln("snd off", '<path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M17 9.5l5 5M22 9.5l-5 5"/>'),
   });
-  const CAT_ICON = { Armor: "shield", Cubes: "cube", "Natural Cubes": "cube", Weapons: "sword", Equipment: "pack", Enemies: "skull", Bosses: "skull", Islands: "island", Structures: "bricks", Coils: "coil", Ingots: "ingot", Features: "star", "Sandbox Exclusives": "star", "Island Mechanics": "gear", "Game Mechanics": "gear", "Menu Mechanics": "gear" };
+  const CAT_ICON = { Armor: "shield", Cubes: "cube", "Natural Cubes": "cube", Weapons: "sword", Equipment: "pack", Enemies: "skull", Bosses: "skull", Islands: "island", Structures: "bricks", Coils: "coil", Ingots: "ingot", Features: "star", "Sandbox Exclusives": "star", "Island Mechanics": "gear", "Game Mechanics": "gear", "Menu Mechanics": "gear", "Recipe items": "cube" };
   const catIcon = (c) => ICON[CAT_ICON[c] || "cube"];
   const PH = ICON.cube.replace('class="ico ico-cube"', 'class="ico ph"');
-  const METHOD = {
-    combine: [ICON.link, "Combine"],
-    furnace: [ICON.flame, "Furnace"],
-    other: [ICON.island, "Found"],
-  };
+  const METHOD = { combine: [ICON.link, "Combine"], furnace: [ICON.flame, "Furnace"], other: [ICON.island, "Found"] };
+  $("#dock .dk-ico").innerHTML = ICON.table;
+  $("#tab-craft").innerHTML = ICON.spark + "Craft";
+  $("#tab-map").innerHTML = ICON.map + "Map";
 
   /* ---------- sound (tiny synthesized blips, no audio files) ---------- */
   const Snd = (() => {
-    let ctx = null, on = true;
+    let ctx = null, on = true, lastTick = 0;
     try { on = localStorage.getItem("cx-sound") !== "off"; } catch (e) {}
     const get = () => {
       if (!on) return null;
@@ -67,7 +72,6 @@
       g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
       o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + .02);
     }
-    let lastTick = 0;
     return {
       get on() { return on; },
       toggle() { on = !on; try { localStorage.setItem("cx-sound", on ? "on" : "off"); } catch (e) {} if (on) this.click(); return on; },
@@ -76,9 +80,11 @@
       tick() { const n = performance.now(); if (n - lastTick > 55) { lastTick = n; tone(1000 + Math.random() * 200, .025, "square", .012); } },
       pop() { tone(360, .1, "triangle", .06, 0, 2.2); },
       drop() { tone(520, .1, "triangle", .05, 0, .45); },
+      thud() { tone(140, .16, "square", .05, 0, .5); tone(260, .1, "triangle", .04, .04, .6); },
       success() { [523, 659, 784, 1047].forEach((f, i) => tone(f, .14, "triangle", .05, i * .07)); },
       nope() { tone(170, .2, "sawtooth", .035, 0, .6); },
       sparkle() { [880, 1175, 1568, 2093, 1760].forEach((f, i) => tone(f, .12, "sine", .04, i * .05)); },
+      select() { tone(660, .05, "square", .03, 0, 1.4); tone(880, .07, "square", .025, .05); },
     };
   })();
   const sndBtn = document.createElement("button");
@@ -88,35 +94,120 @@
   document.querySelector(".top").appendChild(sndBtn);
   sndBtn.addEventListener("click", (e) => { e.stopPropagation(); Snd.toggle(); paintSnd(); });
   document.addEventListener("click", (e) => {
-    if (e.target.closest("#snd")) return;
+    if (e.target.closest("#snd, #dock, .modal")) return;
     if (e.target.closest("a.row, a.tile, a.cta, .tabs a, .back, .body a, .brand")) Snd.nav();
     else if (e.target.closest("[data-add], [data-rm]")) { /* played by the craft view */ }
     else if (e.target.closest("button")) Snd.click();
   });
-  // an image that fails to load becomes the placeholder instead of a broken icon
-  document.addEventListener("error", (e) => {
+  document.addEventListener("error", (e) => {      // a failed image becomes the placeholder
     const i = e.target;
     if (i && i.tagName === "IMG" && i.closest(".thumb")) i.parentElement.innerHTML = PH;
   }, true);
 
+  /* ---------- particles ---------- */
+  function burst(x, y, n = 14) {
+    const colors = ["#e03131", "#1c7ed6", "#f2b705", "#37b24d", "#e8590c", "#7950f2"];
+    for (let i = 0; i < n; i++) {
+      const b = document.createElement("i"); b.className = "bit";
+      const a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 70;
+      b.style.cssText = `left:${x}px;top:${y}px;background:${colors[i % colors.length]};--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d - 20}px;--r:${Math.random() * 360}deg`;
+      fx.appendChild(b); setTimeout(() => b.remove(), 800);
+    }
+  }
+
   /* ---------- load ---------- */
-  list.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+  list.innerHTML = '<div class="loader"><i></i><i></i><i></i></div>';
+  const readyCbs = [];
   fetch("data.json").then((r) => r.json()).then((d) => {
-    pages = d.pages.map((p) => ({
+    extraImgs = d.imgs || {};
+    const raw = mergeDuplicates(d.pages);
+    const virtual = makeVirtual(raw);
+    pages = raw.concat(virtual).map((p) => ({
       ...p,
-      cats: p.cats.filter((c) => !HIDE_CATS.has(c)),
-      _t: norm(p.title), _c: norm(p.cats.join(" ")),
+      cats: fixCats(p),
+      _t: norm(p.title), _c: norm(fixCats(p).join(" ")),
       _r: norm(p.recipes.map((r) => r.raw).join(" ")), _x: norm(p.text),
     }));
     pages.forEach((p) => byTitle.set(p._t, p));
-    extraImgs = d.imgs || {};
     buildRecipeIndex();
     $("#wikilink").href = d.source;
-    $("#built").textContent = "Data last refreshed " + d.built + ".";
+    $("#built").textContent = `${pages.length} items · data last refreshed ${d.built}.`;
+    readyCbs.forEach((f) => f());
     buildQuick(); buildCats(); route();
-  }).catch(() => {
+  }).catch((e) => {
+    console.error(e);
     list.innerHTML = '<div class="empty"><b>Couldn\'t load the data.</b><p>Try reloading the page.</p></div>';
   });
+
+  /* Everything that exists in the game gets an entry, even without its own wiki page:
+     items that only appear inside recipes, and bosses / places that only exist on the map. */
+  function inferCats(name) {
+    const n = name.toLowerCase(), c = [];
+    if (/\bcube\b/.test(n)) c.push("Cubes");
+    if (/shield|armor|helmet|chestplate|legging|boots?\b/.test(n)) c.push("Armor");
+    if (/sword|club|hammer|spear|greatsword|pitchfork|caltrop|axe|bow\b/.test(n)) c.push("Weapons");
+    if (/ingot|^iron$|^gold$|^copper$|^steel$|dust|shard/.test(n)) c.push("Ingots");
+    if (/coil/.test(n)) c.push("Coils");
+    return c;
+  }
+  /* The wiki has pages that differ only by capitalisation ("Black Iron Cube" / "Black iron cube").
+     Keep one entry per item, with the fuller page as the base and the other's info folded in. */
+  function mergeDuplicates(list) {
+    const groups = new Map();
+    list.forEach((p) => { const k = norm(p.title); (groups.get(k) || groups.set(k, []).get(k)).push(p); });
+    return [...groups.values()].map((g) => {
+      if (g.length === 1) return g[0];
+      g.sort((a, b) => b.text.length - a.text.length);
+      const [main, ...rest] = g, seen = new Set(main.recipes.map((r) => r.raw));
+      const m = { ...main, cats: [...new Set(g.flatMap((x) => x.cats))], img: g.map((x) => x.img).find(Boolean) || null, recipes: main.recipes.slice() };
+      for (const o of rest) {
+        o.recipes.forEach((r) => { if (!seen.has(r.raw)) { seen.add(r.raw); m.recipes.push(r); } });
+        if (o.text && !main.text.includes(o.text.slice(0, 40))) { m.html += `<h2>Also on the wiki (“${esc(o.title)}”)</h2>${o.html}`; m.text += " " + o.text; }
+      }
+      return m;
+    });
+  }
+  const WEAPON =/\b(sword|club|hammer|greatsword|pitchfork|caltrop|spear|axe|bow|blade|dagger|scythe|mace|staff)\b/i;
+  function fixCats(p) {
+    const c = new Set(p.cats.filter((x) => !HIDE_CATS.has(x)));
+    const enemy = c.has("Enemies") || c.has("Bosses") || c.has("Islands");
+    if (!enemy && WEAPON.test(p.title) && !/handle|tree/i.test(p.title)) { c.add("Weapons"); c.add("Equipment"); }
+    if (!enemy && /\b(shield|armor set|helmet|chestplate|leggings?|boots?)\b/i.test(p.title)) c.add("Armor");
+    if (!enemy && /\bcoil\b/i.test(p.title)) { c.add("Coils"); c.add("Equipment"); }
+    if (!enemy && /\b(ingot|dust)\b/i.test(p.title)) c.add("Ingots");
+    return [...c];
+  }
+  function makeVirtual(raw) {
+    const have = new Set(raw.map((p) => norm(p.title)));
+    const rawBy = new Map(raw.map((p) => [norm(p.title), p]));
+    const seen = new Map();
+    const consider = (n, r, idx) => {
+      n = (n || "").replace(/\s+/g, " ").trim();
+      if (!n || n.length > 42 || /[,.?_:]/.test(n) || /[\u{1F300}-\u{1FAFF}☀-➿]/u.test(n) || !/[a-z]/i.test(n)) return;
+      const k = norm(n);
+      if (!k || have.has(k) || seen.has(k)) return;
+      seen.set(k, { title: n, r, idx });
+    };
+    for (const p of raw) for (const r of p.recipes) {
+      r.from.forEach((n, i) => consider(n, r, i));
+      const [m, alt] = splitAlt(r.to);
+      consider(m, r, -1);
+      alt.split(/,\s*/).forEach((a) => consider(a, r, -1));
+    }
+    const out = [];
+    for (const { title, r, idx } of seen.values()) {
+      const made = r.method !== "other" && norm(splitAlt(r.to)[0]) === norm(title);
+      const parent = rawBy.get(norm((idx >= 0 ? r.fromT && r.fromT[idx] : r.toT) || ""));
+      const summary = made ? `Made by combining ${r.from.filter((f) => norm(f) !== "furnace").join(" + ")}.` : `Used to make ${splitAlt(r.to)[0]}.`;
+      out.push({
+        title, cats: [...inferCats(title), "Recipe items"], img: extraImgs[nk(title)] || (parent && parent.img) || null,
+        summary, text: summary, html: "", recipes: [], virtual: true,
+      });
+      have.add(norm(title));
+    }
+    if (window.CX && CX.map && CX.map.extraPages) CX.map.extraPages(raw).forEach((p) => { if (!have.has(norm(p.title))) { out.push(p); have.add(norm(p.title)); } });
+    return out;
+  }
 
   /* ---------- recipe index ---------- */
   const rkey = (r) => r.from.map(norm).sort().join("+") + ">" + norm(splitAlt(r.to)[0]);
@@ -143,18 +234,33 @@
       r._out = norm(rp ? rp.title : main);
     }
   }
+  function recipesFor(p) {
+    const me = p._t, seen = new Set(), makes = [], uses = [];
+    const add = (r, isMake) => { const k = rkey(r); if (seen.has(k)) return; seen.add(k); (isMake ? makes : uses).push(r); };
+    p.recipes.forEach((r) => add(r, r.kind === "obtain"));
+    recipes.forEach((r) => { if (r._out === me) add(r, true); else if (r._in.includes(me)) add(r, false); });
+    return { makes, uses };
+  }
+
+  const thumb = (p, cls = "") => {
+    const u = p && imgFor(p.title, p);
+    return u ? `<div class="thumb ${cls}"><img src="${esc(u)}" alt="" draggable="false" loading="lazy" referrerpolicy="no-referrer"></div>` : `<div class="thumb ${cls}">${PH}</div>`;
+  };
+  const tagHtml = (c) => `<span class="tag">${catIcon(c)}${esc(c)}</span>`;
 
   function tile(name, target, hiKey, cls = "") {
+    if (/^[\s_?.!-]*$/.test(name)) name = "Unknown";
     const [main, alt] = splitAlt(name);
     const pg = pageFor(main, target);
     const key = norm(pg ? pg.title : main);
     const u = imgFor(main, pg);
-    const img = u ? `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : PH;
+    const img = u ? `<img src="${esc(u)}" alt="" draggable="false" loading="lazy" referrerpolicy="no-referrer">` : PH;
     const inner = `<span class="thumb sm">${img}</span><span class="cap">${esc(main)}${alt ? `<small>or ${esc(alt)}</small>` : ""}</span>`;
     const c = `tile ${cls}${hiKey && key === hiKey ? " hi" : ""}`;
-    return pg ? `<a class="${c}" href="#/${slug(pg.title)}" title="${esc(pg.title)}">${inner}</a>` : `<span class="${c}">${inner}</span>`;
+    const item = esc(pg ? pg.title : main);
+    return pg ? `<a class="${c}" href="#/${slug(pg.title)}" data-item="${item}" draggable="false" title="${esc(pg.title)} (drag me to the crafting table)">${inner}</a>`
+              : `<span class="${c}" data-item="${item}">${inner}</span>`;
   }
-
   function card(r, hiKey, i = 0) {
     const [icon, label] = METHOD[r.method] || METHOD.other;
     const ins = [];
@@ -175,7 +281,6 @@
     if (b.dataset.random !== undefined) { Snd.sparkle(); const p = pages[Math.floor(Math.random() * pages.length)]; location.hash = "#/" + slug(p.title); return; }
     q.value = b.dataset.q; shown = PAGE_SIZE; render(); q.focus();
   });
-
   function buildCats() {
     const counts = {};
     pages.forEach((p) => p.cats.forEach((c) => (counts[c] = (counts[c] || 0) + 1)));
@@ -202,7 +307,6 @@
       d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
     return d[m][n];
   }
-
   function score(p, tokens, full) {
     let s = 0;
     if (p._t === full) s += 200;
@@ -224,16 +328,14 @@
     for (const t of tokens) if (p.cats.some((c) => norm(c) === t || norm(c) === t + "s" || norm(c).startsWith(t + " "))) s += 35;
     return s;
   }
-
-  function search(text) {
+  function search(text, pool) {
     const full = norm(text.replace(/armour/gi, "armor"));
-    const pool = cat === "All" ? pages : pages.filter((p) => p.cats.includes(cat));
+    pool = pool || (cat === "All" ? pages : pages.filter((p) => p.cats.includes(cat)));
     if (!full) return pool.slice().sort((a, b) => a.title.localeCompare(b.title));
     const tokens = full.split(" ").map((t) => (t.length > 3 ? t.replace(/s$/, "") : t));
     return pool.map((p) => [score(p, tokens, full), p]).filter((x) => x[0] > 0)
       .sort((a, b) => b[0] - a[0] || a[1].title.localeCompare(b[1].title)).map((x) => x[1]);
   }
-
   function hl(text, terms) {
     let out = esc(text);
     terms.filter((t) => t.length > 1).forEach((t) => {
@@ -241,22 +343,11 @@
     });
     return out;
   }
-
-  const thumb = (p, cls = "") => {
-    const u = p && imgFor(p.title, p);
-    return u ? `<div class="thumb ${cls}"><img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>` : `<div class="thumb ${cls}">${PH}</div>`;
-  };
-  const tagHtml = (c) => `<span class="tag">${catIcon(c)}${esc(c)}</span>`;
-
   function snippet(p, terms) {
-    const text = noEmoji(p.text), lower = text.toLowerCase();
-    for (const t of terms) {
-      const i = lower.indexOf(t);
-      if (i > 60) return "…" + text.slice(Math.max(0, i - 50), i + 130);
-    }
-    return noEmoji(p.summary);
+    const text = noEmoji(p.text).replace(/^(Description|Introduction)\s+/i, ""), lower = text.toLowerCase();
+    for (const t of terms) { const i = lower.indexOf(t); if (i > 60) return "…" + text.slice(Math.max(0, i - 50), i + 130); }
+    return noEmoji(p.summary).replace(/^(Description|Introduction)\s+/i, "");
   }
-
   function render() {
     const text = q.value.trim();
     currentResults = search(text);
@@ -270,18 +361,19 @@
     }
     const slice = currentResults.slice(0, shown);
     list.innerHTML =
-      `<div class="meta"><span>${currentResults.length} result${currentResults.length === 1 ? "" : "s"}${cat !== "All" ? " in " + esc(cat) : ""}</span></div>` +
-      slice.map((p, i) => `<a class="row" style="--i:${Math.min(i, 12)}" href="#/${slug(p.title)}">${thumb(p)}<div>
-        <h3>${hl(p.title, terms)}</h3>
+      `<div class="meta"><span>${currentResults.length} result${currentResults.length === 1 ? "" : "s"}${cat !== "All" ? " in " + esc(cat) : ""}</span><span class="hintdrag">${ICON.hand} drag an item to the crafting table</span></div>` +
+      slice.map((p, i) => {
+        const onMap = CX.map && CX.map.tileFor && CX.map.tileFor(p.title);
+        return `<a class="row" style="--i:${Math.min(i, 12)}" href="#/${slug(p.title)}" data-item="${esc(p.title)}" draggable="false">${thumb(p)}<div>
+        <h3>${hl(p.title, terms)}${onMap ? ICON.pin : ""}</h3>
         <div class="tags">${p.cats.slice(0, 3).map(tagHtml).join("")}</div>
-        <p>${hl(snippet(p, terms), terms)}</p></div><span class="go">${ICON.arrow}</span></a>`).join("") +
+        <p>${hl(snippet(p, terms), terms)}</p></div><span class="go">${ICON.arrow}</span></a>`;
+      }).join("") +
       (currentResults.length > shown ? `<button class="morebtn">Show more (${currentResults.length - shown})</button>` : "");
     list.querySelector(".morebtn")?.addEventListener("click", () => { shown += PAGE_SIZE; render(); });
   }
-
   q.addEventListener("input", () => {
-    Snd.tick();
-    shown = PAGE_SIZE;
+    Snd.tick(); shown = PAGE_SIZE;
     if (location.hash.length > 2) { history.replaceState(null, "", "#/"); route(); } else render();
   });
   q.addEventListener("keydown", (e) => {
@@ -296,9 +388,10 @@
   });
   document.addEventListener("keydown", (e) => {
     const tag = (document.activeElement || {}).tagName;
+    if (e.key === "Escape" && !modal.hidden) { closeModal(); return; }
     if (e.key === "/" && tag !== "INPUT" && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      if ($("#craft").hidden) { q.focus(); q.select(); } else $("#craftin")?.focus();
+      if (!craftEl.hidden) $("#craftin")?.focus(); else if (!mapEl.hidden) $("#mapq")?.focus(); else { q.focus(); q.select(); }
     }
   });
 
@@ -310,7 +403,7 @@
     t.content.querySelectorAll("li").forEach((li) => { if (keys.has(norm(li.textContent))) li.remove(); });
     t.content.querySelectorAll("ul,ol").forEach((u) => { if (!u.children.length) u.remove(); });
     let changed = true;
-    while (changed) {            // drop headings left with nothing under them
+    while (changed) {
       changed = false;
       t.content.querySelectorAll("h2,h3,h4").forEach((h) => {
         const n = h.nextElementSibling;
@@ -319,28 +412,31 @@
     }
     return t.innerHTML.trim();
   }
-
   function showPage(p) {
-    const me = p._t, seen = new Set(), makes = [], uses = [];
-    const add = (r, isMake) => { const k = rkey(r); if (seen.has(k)) return; seen.add(k); (isMake ? makes : uses).push(r); };
-    p.recipes.forEach((r) => add(r, r.kind === "obtain"));
-    recipes.forEach((r) => { if (r._out === me) add(r, true); else if (r._in.includes(me)) add(r, false); });
+    const { makes, uses } = recipesFor(p);
+    const me = p._t;
     const body = cleanBody(p);
+    const mt = CX.map && CX.map.tileFor && CX.map.tileFor(p.title);
     pageEl.innerHTML = `
       <a class="back" href="#/">&larr; back to search</a>
-      <div class="head">${thumb(p)}<div><h1>${esc(p.title)}</h1>
+      <div class="head" data-item="${esc(p.title)}">${thumb(p)}<div><h1>${esc(p.title)}</h1>
         <div class="tags">${p.cats.map(tagHtml).join("")}</div>
-        ${uses.length ? `<a class="cta" href="#/craft/${slug(p.title)}">${ICON.spark} What can I craft with this?</a>` : ""}</div></div>
+        <div class="ctas">
+          ${uses.length ? `<a class="cta" href="#/craft/${slug(p.title)}">${ICON.spark} What can I craft with this?</a>` : ""}
+          ${mt ? `<a class="cta alt" href="#/map/${esc(mt)}">${ICON.pin} Show on map</a>` : ""}
+          <button class="cta plain" data-open="${esc(p.title)}">${ICON.table} Quick view</button>
+        </div></div></div>
       ${makes.length ? `<h2 class="sec">${ICON.link} How to get it <small>${makes.length}</small></h2>${grid(makes, me)}` : ""}
       ${uses.length ? `<h2 class="sec">${ICON.flame} What it’s used for <small>${uses.length}</small></h2>${grid(uses, me)}` : ""}
+      ${p.virtual && !p.html ? `<div class="note">${p.summary ? esc(p.summary) + " " : ""}This item doesn’t have its own wiki page (yet), so everything the wiki says about it is in the recipes above.</div>` : ""}
       ${body ? `<h2 class="sec">From the wiki</h2><div class="body">${body}</div>` : ""}
-      <div class="src">Source: <a href="https://cubination.fandom.com/wiki/${esc(p.title.replace(/ /g, "_"))}" target="_blank" rel="noopener">${esc(p.title)} on the wiki</a></div>`;
+      ${p.virtual ? "" : `<div class="src">Source: <a href="https://cubination.fandom.com/wiki/${esc(p.title.replace(/ /g, "_"))}" target="_blank" rel="noopener">${esc(p.title)} on the wiki</a></div>`}`;
     document.title = p.title + " – Cubination Index";
   }
+  pageEl.addEventListener("click", (e) => { const b = e.target.closest("[data-open]"); if (b) openItem(b.dataset.open); });
 
   /* ---------- craft finder ---------- */
-  let picked = [], lastCraft = ""; // ingredient keys
-
+  let picked = [], lastCraft = "";
   function showCraft(keys) {
     picked = keys;
     document.title = "What can I craft? – Cubination Index";
@@ -362,7 +458,8 @@
       if (getIt.length) results += `<h2 class="sec">${ICON.link} How to get ${esc(chips[0].label)} <small>${getIt.length}</small></h2>${grid(getIt, picked[0])}`;
     }
     if (chips.length && picked.join() !== lastCraft) {
-      setTimeout(() => (picked.length > 1 ? recipes.some((r) => picked.every((k) => r._in.includes(k))) : recipes.some((r) => r._in.includes(picked[0]) || r._out === picked[0])) ? Snd.success() : Snd.nope(), 120);
+      const ok = picked.length > 1 ? recipes.some((r) => picked.every((k) => r._in.includes(k))) : recipes.some((r) => r._in.includes(picked[0]) || r._out === picked[0]);
+      setTimeout(() => (ok ? Snd.success() : Snd.nope()), 120);
     }
     lastCraft = picked.join();
     craftEl.innerHTML = `
@@ -373,15 +470,15 @@
           <input id="craftin" class="craftin" type="text" autocomplete="off" spellcheck="false" placeholder="Start typing: iron cube, wood cube…">
           <div class="sugg" hidden></div>
         </div>
-        <div class="chips">${chips.map((c) => `<span class="chip">${thumb(c.page || { title: c.label }, "")}${esc(c.label)}<button data-rm="${esc(c.key)}" aria-label="Remove ${esc(c.label)}">×</button></span>`).join("")}</div>
+        <div class="chips">${chips.map((c) => `<span class="chip" data-item="${esc(c.label)}">${thumb(c.page || { title: c.label }, "")}${esc(c.label)}<button data-rm="${esc(c.key)}" aria-label="Remove ${esc(c.label)}">×</button></span>`).join("")}</div>
         ${chips.length ? "" : `<div class="hint">Popular ingredients</div><div class="tryrow">${popular.map((c) => `<button class="chipbtn" data-add="${esc(c.key)}">${esc(c.label)}</button>`).join("")}</div>`}
       </div>${results}`;
     wireCraft();
   }
-
   function setPicked(keys) {
-    keys.length > picked.length ? Snd.pop() : Snd.drop(); location.hash = "#/craft" + (keys.length ? "/" + keys.map((k) => slug(ingredients.get(k).label)).join("~") : ""); }
-
+    keys.length > picked.length ? Snd.pop() : Snd.drop();
+    location.hash = "#/craft" + (keys.length ? "/" + keys.map((k) => slug(ingredients.get(k).label)).join("~") : "");
+  }
   function wireCraft() {
     const input = $("#craftin"), box = craftEl.querySelector(".sugg");
     let sel = 0, opts = [];
@@ -414,20 +511,148 @@
     if (!picked.length) input.focus({ preventScroll: true });
   }
 
+  /* ---------- popup: how is this item made? ---------- */
+  const popStack = [];
+  let lastFocus = null;
+  function closeModal() {
+    modal.hidden = true; modal.innerHTML = ""; popStack.length = 0; document.body.style.overflow = "";
+    if (lastFocus && lastFocus.focus) try { lastFocus.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function openModalShell(inner) {
+    if (modal.hidden) { lastFocus = document.activeElement; Snd.thud(); }
+    modal.hidden = false; document.body.style.overflow = "hidden";
+    modal.innerHTML = `<div class="mbox" tabindex="-1"><button class="mclose" aria-label="Close">×</button>${inner}</div>`;
+    modal.querySelector(".mbox").focus({ preventScroll: true });
+  }
+  function openItem(title, fromBack) {
+    const p = title && byTitle.get(norm(title));
+    if (!p) return openPicker();
+    if (!fromBack) { if (popStack[popStack.length - 1] !== p.title) popStack.push(p.title); }
+    const { makes, uses } = recipesFor(p);
+    const mt = CX.map && CX.map.tileFor && CX.map.tileFor(p.title);
+    const prose = !makes.length && !uses.length ? noEmoji(p.summary || "") : (makes.length ? "" : "");
+    openModalShell(`
+      ${popStack.length > 1 ? `<button class="mback" data-back>&larr; back</button>` : ""}
+      <div class="mhead" data-item="${esc(p.title)}">${thumb(p)}<div><h2>${esc(p.title)}</h2><div class="tags">${p.cats.slice(0, 4).map(tagHtml).join("")}</div></div></div>
+      ${makes.length ? `<h3 class="sec">${ICON.link} How it’s made <small>${makes.length}</small></h3>${grid(makes.slice(0, 6), p._t)}${makes.length > 6 ? `<p class="mtext">+ ${makes.length - 6} more on the full page.</p>` : ""}`
+                     : `<h3 class="sec">${ICON.island} How to get it</h3><p class="mtext">${p.virtual || !p.summary ? "The wiki doesn’t list a recipe for this one." : "No crafting recipe on the wiki. It may be found, dropped or built. Here’s what the wiki says:"}</p>${prose ? `<p class="mtext">${esc(prose)}${prose.length >= 219 ? "…" : ""}</p>` : ""}`}
+      ${uses.length ? `<h3 class="sec">${ICON.flame} Used for <small>${uses.length}</small></h3>${grid(uses.slice(0, 4), p._t)}${uses.length > 4 ? `<p class="mtext">+ ${uses.length - 4} more.</p>` : ""}` : ""}
+      <div class="mfoot">
+        <a class="cta" href="#/${slug(p.title)}" data-close>${ICON.arrow} Open full page</a>
+        ${uses.length ? `<a class="cta plain" href="#/craft/${slug(p.title)}" data-close>${ICON.spark} What can I craft with it?</a>` : ""}
+        ${mt ? `<a class="cta alt" href="#/map/${esc(mt)}" data-close>${ICON.pin} Show on map</a>` : ""}
+      </div>`);
+  }
+  function openPicker(text = "") {
+    openModalShell(`
+      <div class="mhead"><div class="thumb">${ICON.table.replace("ico ico-table", "ico ph")}</div><div><h2>Crafting table</h2><p class="mtext" style="margin:0">Drag any item from the page onto the table, or look one up here.</p></div></div>
+      <input class="minput" id="pickq" type="search" placeholder="Search any item…" autocomplete="off" value="${esc(text)}" style="margin-top:14px">
+      <div class="pickres" id="pickres"></div>`);
+    const input = $("#pickq"), res = $("#pickres");
+    const draw = () => {
+      const rs = search(input.value, pages).slice(0, 18);
+      res.innerHTML = rs.map((p) => `<a class="tile" href="#/${slug(p.title)}" data-item="${esc(p.title)}" draggable="false"><span class="thumb sm">${imgFor(p.title, p) ? `<img src="${esc(imgFor(p.title, p))}" alt="" draggable="false" loading="lazy" referrerpolicy="no-referrer">` : PH}</span><span class="cap">${esc(p.title)}</span></a>`).join("");
+    };
+    input.addEventListener("input", () => { Snd.tick(); draw(); });
+    draw(); input.focus({ preventScroll: true });
+  }
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal || e.target.closest(".mclose")) return closeModal();
+    if (e.target.closest("[data-back]")) { popStack.pop(); return openItem(popStack[popStack.length - 1], true); }
+    const a = e.target.closest("a");
+    if (!a) return;
+    if (a.dataset.close !== undefined) { setTimeout(closeModal, 0); return; }
+    const t = a.dataset.item;
+    if (t) { e.preventDefault(); Snd.pop(); openItem(t); }
+  });
+  dock.addEventListener("click", () => { if (!suppress) openPicker(); });
+
+  /* ---------- drag any item onto the crafting table ---------- */
+  let D = null, suppress = false, ghost = null;
+  document.addEventListener("pointerdown", (e) => {
+    if (e.button > 0 || D || !modal.hidden && !e.target.closest(".modal")) return;
+    const el = e.target.closest("[data-item]");
+    if (!el || e.target.closest("input, textarea, .mclose, button:not([data-item])")) return;
+    D = { el, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, touch: e.pointerType !== "mouse", on: false, timer: 0 };
+    if (D.touch) D.timer = setTimeout(begin, 260);
+  }, { passive: true });
+  function begin() {
+    if (!D || D.on) return;
+    D.on = true; clearTimeout(D.timer);
+    const p = byTitle.get(norm(D.el.dataset.item));
+    ghost = document.createElement("div"); ghost.className = "dragghost";
+    ghost.innerHTML = `${thumb(p || { title: D.el.dataset.item })}<span>${esc(D.el.dataset.item)}</span>`;
+    document.body.appendChild(ghost);
+    document.body.classList.add("dragging");
+    Snd.pop(); if (navigator.vibrate) try { navigator.vibrate(10); } catch (e) {}
+    place();
+  }
+  function place() { if (ghost) ghost.style.transform = `translate(${D.lx + 14}px, ${D.ly - 26}px) rotate(-3deg)`; }
+  function overDock() {
+    const r = dock.getBoundingClientRect(), m = 30;
+    return D.lx > r.left - m && D.lx < r.right + m && D.ly > r.top - m && D.ly < r.bottom + m;
+  }
+  document.addEventListener("pointermove", (e) => {
+    if (!D) return;
+    D.lx = e.clientX; D.ly = e.clientY;
+    if (!D.on) {
+      const dist = Math.hypot(e.clientX - D.x, e.clientY - D.y);
+      if (D.touch) { if (dist > 10) { clearTimeout(D.timer); D = null; } }
+      else if (dist > 6) begin();
+      return;
+    }
+    place();
+    const hot = overDock();
+    if (hot !== dock.classList.contains("hot")) { dock.classList.toggle("hot", hot); if (hot) Snd.select(); }
+  }, { passive: true });
+  function endDrag(cancel) {
+    if (!D) return;
+    clearTimeout(D.timer);
+    if (D.on) {
+      const drop = !cancel && overDock(), title = D.el.dataset.item;
+      suppress = true; setTimeout(() => (suppress = false), 60);
+      document.body.classList.remove("dragging"); dock.classList.remove("hot");
+      const g = ghost; ghost = null;
+      if (drop) {
+        const r = dock.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        g.classList.add("sink"); g.style.transform = `translate(${cx - 30}px, ${cy - 20}px) scale(.3)`;
+        setTimeout(() => g.remove(), 300);
+        burst(cx, cy, 18); Snd.success();
+        setTimeout(() => openItem(title), 160);
+      } else { g.classList.add("sink"); setTimeout(() => g.remove(), 250); Snd.drop(); }
+    }
+    D = null;
+  }
+  document.addEventListener("pointerup", () => endDrag(false));
+  document.addEventListener("pointercancel", () => endDrag(true));
+  document.addEventListener("click", (e) => { if (suppress) { e.preventDefault(); e.stopPropagation(); } }, true);
+  document.addEventListener("touchmove", (e) => { if (D && D.on) e.preventDefault(); }, { passive: false });
+  document.addEventListener("contextmenu", (e) => { if (D && D.touch) e.preventDefault(); });
+  document.addEventListener("dragstart", (e) => { if (e.target.closest && e.target.closest("[data-item]")) e.preventDefault(); });
+
   /* ---------- routing ---------- */
   function route() {
     if (!pages.length) return;
+    closeModal();
     const raw = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
     const isCraft = raw === "craft" || raw.startsWith("craft/");
-    $("#tab-search").classList.toggle("on", !isCraft);
+    const isMap = raw === "map" || raw.startsWith("map/");
+    $("#tab-search").classList.toggle("on", !isCraft && !isMap);
     $("#tab-craft").classList.toggle("on", isCraft);
+    $("#tab-map").classList.toggle("on", isMap);
     const h = raw.replace(/_/g, " ");
-    const p = !isCraft && h && byTitle.get(norm(h));
-    $("#searchbar").hidden = !!p || isCraft;
-    list.hidden = !!p || isCraft;
+    const p = !isCraft && !isMap && h && byTitle.get(norm(h));
+    $("#searchbar").hidden = !!p || isCraft || isMap;
+    list.hidden = !!p || isCraft || isMap;
     pageEl.hidden = !p;
     craftEl.hidden = !isCraft;
-    if (isCraft) {
+    mapEl.hidden = !isMap;
+    if (!isMap && CX.map && CX.map.hide) CX.map.hide();
+    if (isMap) {
+      document.title = "World map – Cubination Index";
+      if (CX.map) CX.map.show(raw.slice(4).replace(/^\//, ""));
+      else mapEl.innerHTML = '<div class="empty"><b>Map failed to load.</b></div>';
+    } else if (isCraft) {
       const keys = raw.slice(6).split("~").filter(Boolean)
         .map((s) => { const pg = byTitle.get(norm(s.replace(/_/g, " "))); return pg ? norm(pg.title) : norm(s.replace(/_/g, " ")); })
         .filter((k) => ingredients.has(k)).slice(0, 3);
@@ -435,9 +660,15 @@
     } else if (p) {
       showPage(p); window.scrollTo(0, 0);
     } else {
-      document.title = "Cubination Index – search cubes, armor, weapons & recipes";
+      document.title = "Cubination Index – search cubes, armor, weapons, recipes & the map";
       render();
     }
   }
   window.addEventListener("hashchange", route);
+
+  /* ---------- shared API for map.js ---------- */
+  window.CX = window.CX || {};
+  Object.assign(window.CX, { esc, norm, nk, slug, ICON, Snd, burst, thumb, tagHtml, grid, openItem, recipesFor, noEmoji, onReady: (f) => (pages.length ? f() : readyCbs.push(f)) });
+  // live views (Object.assign would copy these once, so define them as real getters)
+  Object.defineProperties(window.CX, { pages: { get: () => pages, configurable: true }, byTitle: { get: () => byTitle, configurable: true } });
 })();
