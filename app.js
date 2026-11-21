@@ -9,6 +9,8 @@
 
   let pages = [], byTitle = new Map(), cat = "All", shown = PAGE_SIZE, selected = -1, currentResults = [], showAllCats = false;
   let recipes = [], ingredients = new Map(), extraImgs = {};
+  let view = "grid";
+  try { view = localStorage.getItem("cx-view") || "grid"; } catch (e) {}
 
   /* ---------- helpers ---------- */
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -50,7 +52,26 @@
   });
   const CAT_ICON = { Armor: "shield", Cubes: "cube", "Natural Cubes": "cube", Weapons: "sword", Equipment: "pack", Enemies: "skull", Bosses: "skull", Islands: "island", Structures: "bricks", Coils: "coil", Ingots: "ingot", Features: "star", "Sandbox Exclusives": "star", "Island Mechanics": "gear", "Game Mechanics": "gear", "Menu Mechanics": "gear", "Recipe items": "cube" };
   const catIcon = (c) => ICON[CAT_ICON[c] || "cube"];
-  const PH = ICON.cube.replace('class="ico ico-cube"', 'class="ico ph"');
+  /* Items with no picture on the wiki get a generated icon tinted from their name (Red Cube is red, Copper is copper...) */
+  const TINT = { red: "#e03131", blue: "#1c7ed6", yellow: "#f2b705", green: "#37b24d", white: "#e9ecef", cyan: "#15aabf", magenta: "#d6336c", purple: "#7950f2", copper: "#c8703a", gold: "#e5a812", golden: "#e5a812", iron: "#8a93a6", steel: "#6f7f95", black: "#3a3a46", pyrolite: "#e8590c", cryoide: "#74c0fc", ice: "#a5d8ff", lava: "#f76707", fire: "#f76707", flame: "#f76707", water: "#339af0", dirt: "#8a5a2b", wood: "#a9763c", wooden: "#a9763c", rock: "#868e96", stone: "#868e96", sand: "#e0c27a", glass: "#a5d8ff", gunpowder: "#495057", lithium: "#adb5bd", orange: "#fd7e14", pink: "#f783ac", brown: "#8a5a2b", silver: "#adb5bd", rusted: "#a0522d", rusty: "#a0522d", frost: "#74c0fc", christmas: "#2f9e44", magma: "#f76707", health: "#f03e3e", regen: "#f03e3e", speed: "#fcc419" };
+  const mix = (hex, t) => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => Math.round(t >= 0 ? v + (255 - v) * t : v * (1 + t))); return "#" + c.map((v) => v.toString(16).padStart(2, "0")).join(""); };
+  function tintFor(name) {
+    const w = norm(name).split(" ");
+    for (const k of w) if (TINT[k]) return TINT[k];
+    let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    const s = 0.55, l = 0.52, a = s * Math.min(l, 1 - l), f = (n) => { const k = (n + h / 30) % 12, v = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); return Math.round(255 * v).toString(16).padStart(2, "0"); };
+    return "#" + f(0) + f(8) + f(4);
+  }
+  function phFor(name = "", cats = []) {
+    const c = tintFor(name), n = name.toLowerCase();
+    if (cats.includes("Bosses") || cats.includes("Enemies"))
+      return `<svg class="ico ph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C7 2 3.500 5.600 3.500 10.500c0 2.500 1 4 2.500 5.200V20h3v-2h1.500v2h3v-2H15v2h3v-4.300c1.500-1.200 2.500-2.700 2.500-5.200C20.500 5.600 17 2 12 2z" fill="${cats.includes("Bosses") ? "#e0a0a0" : "#a9d3b0"}" stroke="rgba(0,0,0,.5)" stroke-width=".9" stroke-linejoin="round"/><circle cx="8.600" cy="11" r="2.100" fill="#1b1814"/><circle cx="15.400" cy="11" r="2.100" fill="#1b1814"/><path d="M12 13.500l1.200 2.500h-2.400z" fill="#1b1814"/></svg>`;
+    if (/\b(sword|club|hammer|greatsword|pitchfork|spear|axe|dagger|mace)\b/.test(n))
+      return `<svg class="ico ph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5" stroke="${mix(c, .1)}" stroke-width="3.4" stroke-linecap="square"/><path d="M15 5h4v4" stroke="${mix(c, .4)}" stroke-width="2" fill="none"/><path d="M6.500 13l4.500 4.500M4 20l3-3" stroke="#5a4a2a" stroke-width="2.600" stroke-linecap="round"/></svg>`;
+    if (/\b(shield|helmet|chestplate|leggings?|boots?|armor)\b/.test(n))
+      return `<svg class="ico ph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.500l8 3v6c0 4.800-3.300 8.600-8 10-4.700-1.400-8-5.200-8-10v-6z" fill="${c}" stroke="${mix(c, -.45)}" stroke-width="1.600" stroke-linejoin="round"/><path d="M12 2.500v19c-4.700-1.400-8-5.200-8-10v-6z" fill="${mix(c, .25)}"/></svg>`;
+    return `<svg class="ico ph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.500l8.500 4.300v10.400L12 21.500l-8.500-4.300V6.800z" fill="${c}"/><path d="M12 2.500l8.500 4.300L12 11 3.500 6.800z" fill="${mix(c, .38)}"/><path d="M12 11v10.500l-8.500-4.300V6.800z" fill="${mix(c, -.12)}"/><path d="M12 11l8.500-4.200v10.400L12 21.500z" fill="${mix(c, -.3)}"/><path d="M12 2.500l8.500 4.300v10.400L12 21.500l-8.500-4.300V6.800z M3.500 6.800L12 11l8.500-4.200M12 11v10.500" fill="none" stroke="rgba(0,0,0,.5)" stroke-width=".9" stroke-linejoin="round"/></svg>`;
+  }
   const METHOD = { combine: [ICON.link, "Combine"], furnace: [ICON.flame, "Furnace"], other: [ICON.island, "Found"] };
   $("#dock .dk-ico").innerHTML = ICON.table;
   $("#tab-craft").innerHTML = ICON.spark + "Craft";
@@ -101,7 +122,7 @@
   });
   document.addEventListener("error", (e) => {      // a failed image becomes the placeholder
     const i = e.target;
-    if (i && i.tagName === "IMG" && i.closest(".thumb")) i.parentElement.innerHTML = PH;
+    if (i && i.tagName === "IMG" && i.closest(".thumb")) i.parentElement.innerHTML = phFor(i.dataset.n || "");
   }, true);
 
   /* ---------- particles ---------- */
@@ -120,6 +141,7 @@
   const readyCbs = [];
   fetch("data.json").then((r) => r.json()).then((d) => {
     extraImgs = d.imgs || {};
+    CX.mapImg = d.mapImg || null;
     const raw = mergeDuplicates(d.pages);
     const virtual = makeVirtual(raw);
     pages = raw.concat(virtual).map((p) => ({
@@ -159,7 +181,7 @@
       if (g.length === 1) return g[0];
       g.sort((a, b) => b.text.length - a.text.length);
       const [main, ...rest] = g, seen = new Set(main.recipes.map((r) => r.raw));
-      const m = { ...main, cats: [...new Set(g.flatMap((x) => x.cats))], img: g.map((x) => x.img).find(Boolean) || null, recipes: main.recipes.slice() };
+      const m = { ...main, gallery: [...new Set(g.flatMap((x) => x.gallery || []))], cats: [...new Set(g.flatMap((x) => x.cats))], img: g.map((x) => x.img).find(Boolean) || null, recipes: main.recipes.slice() };
       for (const o of rest) {
         o.recipes.forEach((r) => { if (!seen.has(r.raw)) { seen.add(r.raw); m.recipes.push(r); } });
         if (o.text && !main.text.includes(o.text.slice(0, 40))) { m.html += `<h2>Also on the wiki (“${esc(o.title)}”)</h2>${o.html}`; m.text += " " + o.text; }
@@ -244,7 +266,7 @@
 
   const thumb = (p, cls = "") => {
     const u = p && imgFor(p.title, p);
-    return u ? `<div class="thumb ${cls}"><img src="${esc(u)}" alt="" draggable="false" loading="lazy" referrerpolicy="no-referrer"></div>` : `<div class="thumb ${cls}">${PH}</div>`;
+    return u ? `<div class="thumb ${cls}"><img src="${esc(u)}" alt="" data-n="${esc(p.title)}" draggable="false" loading="lazy"></div>` : `<div class="thumb ${cls}">${phFor(p ? p.title : "", p ? p.cats : [])}</div>`;
   };
   const tagHtml = (c) => `<span class="tag">${catIcon(c)}${esc(c)}</span>`;
 
@@ -254,7 +276,7 @@
     const pg = pageFor(main, target);
     const key = norm(pg ? pg.title : main);
     const u = imgFor(main, pg);
-    const img = u ? `<img src="${esc(u)}" alt="" draggable="false" loading="lazy" referrerpolicy="no-referrer">` : PH;
+    const img = u ? `<img src="${esc(u)}" alt="" data-n="${esc(main)}" draggable="false" loading="lazy">` : phFor(main);
     const inner = `<span class="thumb sm">${img}</span><span class="cap">${esc(main)}${alt ? `<small>or ${esc(alt)}</small>` : ""}</span>`;
     const c = `tile ${cls}${hiKey && key === hiKey ? " hi" : ""}`;
     const item = esc(pg ? pg.title : main);
@@ -360,24 +382,29 @@
       return;
     }
     const slice = currentResults.slice(0, shown);
-    list.innerHTML =
-      `<div class="meta"><span>${currentResults.length} result${currentResults.length === 1 ? "" : "s"}${cat !== "All" ? " in " + esc(cat) : ""}</span><span class="hintdrag">${ICON.hand} drag an item to the crafting table</span></div>` +
-      slice.map((p, i) => {
-        const onMap = CX.map && CX.map.tileFor && CX.map.tileFor(p.title);
-        return `<a class="row" style="--i:${Math.min(i, 12)}" href="#/${slug(p.title)}" data-item="${esc(p.title)}" draggable="false">${thumb(p)}<div>
-        <h3>${hl(p.title, terms)}${onMap ? ICON.pin : ""}</h3>
+    const vt = `<span class="vt" role="group" aria-label="View"><button data-v="grid" aria-pressed="${view === "grid"}" title="Grid view">${ICON.cube}Grid</button><button data-v="list" aria-pressed="${view === "list"}" title="List view">${ICON.bricks}List</button></span>`;
+    const pin = (p) => (CX.map && CX.map.tileFor && CX.map.tileFor(p.title) ? ICON.pin : "");
+    const body = view === "grid"
+      ? `<div class="cards">${slice.map((p, i) => `<a class="card" style="--i:${Math.min(i, 14)}" href="#/${slug(p.title)}" data-item="${esc(p.title)}" draggable="false">${thumb(p, "big")}<div class="cb"><h3>${hl(p.title, terms)}${pin(p)}</h3><div class="tags">${p.cats.slice(0, 2).map(tagHtml).join("")}</div></div></a>`).join("")}</div>`
+      : slice.map((p, i) => `<a class="row" style="--i:${Math.min(i, 12)}" href="#/${slug(p.title)}" data-item="${esc(p.title)}" draggable="false">${thumb(p)}<div>
+        <h3>${hl(p.title, terms)}${pin(p)}</h3>
         <div class="tags">${p.cats.slice(0, 3).map(tagHtml).join("")}</div>
-        <p>${hl(snippet(p, terms), terms)}</p></div><span class="go">${ICON.arrow}</span></a>`;
-      }).join("") +
+        <p>${hl(snippet(p, terms), terms)}</p></div><span class="go">${ICON.arrow}</span></a>`).join("");
+    list.innerHTML =
+      `<div class="meta"><span>${currentResults.length} result${currentResults.length === 1 ? "" : "s"}${cat !== "All" ? " in " + esc(cat) : ""}</span><span class="hintdrag">${ICON.hand} drag any item to the crafting table</span>${vt}</div>` + body +
       (currentResults.length > shown ? `<button class="morebtn">Show more (${currentResults.length - shown})</button>` : "");
     list.querySelector(".morebtn")?.addEventListener("click", () => { shown += PAGE_SIZE; render(); });
   }
+  list.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-v]"); if (!b) return;
+    view = b.dataset.v; try { localStorage.setItem("cx-view", view); } catch (er) {} render();
+  });
   q.addEventListener("input", () => {
     Snd.tick(); shown = PAGE_SIZE;
     if (location.hash.length > 2) { history.replaceState(null, "", "#/"); route(); } else render();
   });
   q.addEventListener("keydown", (e) => {
-    const rows = [...list.querySelectorAll(".row")];
+    const rows = [...list.querySelectorAll(".row, .card")];
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       selected = Math.max(0, Math.min(rows.length - 1, selected + (e.key === "ArrowDown" ? 1 : -1)));
@@ -428,12 +455,16 @@
         </div></div></div>
       ${makes.length ? `<h2 class="sec">${ICON.link} How to get it <small>${makes.length}</small></h2>${grid(makes, me)}` : ""}
       ${uses.length ? `<h2 class="sec">${ICON.flame} What it’s used for <small>${uses.length}</small></h2>${grid(uses, me)}` : ""}
+      ${(p.gallery || []).length ? `<h2 class="sec">${ICON.star} Images from the wiki <small>${p.gallery.length}</small></h2><div class="gal">${p.gallery.map((g) => `<button class="gi" data-zoom="${esc(g)}" aria-label="Enlarge image"><img src="${esc(g)}" alt="" loading="lazy"></button>`).join("")}</div>` : ""}
       ${p.virtual && !p.html ? `<div class="note">${p.summary ? esc(p.summary) + " " : ""}This item doesn’t have its own wiki page (yet), so everything the wiki says about it is in the recipes above.</div>` : ""}
       ${body ? `<h2 class="sec">From the wiki</h2><div class="body">${body}</div>` : ""}
       ${p.virtual ? "" : `<div class="src">Source: <a href="https://cubination.fandom.com/wiki/${esc(p.title.replace(/ /g, "_"))}" target="_blank" rel="noopener">${esc(p.title)} on the wiki</a></div>`}`;
     document.title = p.title + " – Cubination Index";
   }
-  pageEl.addEventListener("click", (e) => { const b = e.target.closest("[data-open]"); if (b) openItem(b.dataset.open); });
+  pageEl.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-open]"); if (b) return openItem(b.dataset.open);
+    const z = e.target.closest("[data-zoom]"); if (z) { Snd.pop(); openModalShell(`<img class="zoomimg" src="${esc(z.dataset.zoom)}" alt="">`); }
+  });
 
   /* ---------- craft finder ---------- */
   let picked = [], lastCraft = "";
@@ -551,7 +582,7 @@
     const input = $("#pickq"), res = $("#pickres");
     const draw = () => {
       const rs = search(input.value, pages).slice(0, 18);
-      res.innerHTML = rs.map((p) => `<a class="tile" href="#/${slug(p.title)}" data-item="${esc(p.title)}" draggable="false"><span class="thumb sm">${imgFor(p.title, p) ? `<img src="${esc(imgFor(p.title, p))}" alt="" draggable="false" loading="lazy" referrerpolicy="no-referrer">` : PH}</span><span class="cap">${esc(p.title)}</span></a>`).join("");
+      res.innerHTML = rs.map((p) => `<a class="tile" href="#/${slug(p.title)}" data-item="${esc(p.title)}" draggable="false"><span class="thumb sm">${imgFor(p.title, p) ? `<img src="${esc(imgFor(p.title, p))}" alt="" data-n="${esc(p.title)}" draggable="false" loading="lazy">` : phFor(p.title)}</span><span class="cap">${esc(p.title)}</span></a>`).join("");
     };
     input.addEventListener("input", () => { Snd.tick(); draw(); });
     draw(); input.focus({ preventScroll: true });

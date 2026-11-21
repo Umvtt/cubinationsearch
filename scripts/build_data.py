@@ -4,12 +4,14 @@
 Usage:  python3 scripts/build_data.py
 Only needs the Python standard library.
 """
+import hashlib
 import json
 import re
 import sys
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -250,6 +252,47 @@ def find_img(name, files):
     return None
 
 
+# ---------------------------------------------------------------- self-hosted images
+IMG_DIR = OUT.parent / "images"
+EXT = {"image/webp": ".webp", "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif"}
+
+
+def base_url(url):
+    """Strip Fandom's resize/revision suffix: .../images/a/ab/Name.png"""
+    return url.split("/revision/")[0]
+
+
+def fetch_image(base, width, sub):
+    """Download one image at a given width into images/<sub>/ and return its repo-relative path."""
+    stem = hashlib.sha1(base.encode()).hexdigest()[:14]
+    folder = IMG_DIR / sub
+    folder.mkdir(parents=True, exist_ok=True)
+    for old in folder.glob(stem + ".*"):
+        return "images/%s/%s" % (sub, old.name)
+    url = "%s/revision/latest/scale-to-width-down/%d" % (base, width)
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "image/webp,image/png,image/*;q=0.8"})
+            with urllib.request.urlopen(req, timeout=40) as r:
+                ext = EXT.get(r.headers.get_content_type())
+                data = r.read()
+            if not ext or len(data) > 700_000 or len(data) < 80:
+                return None
+            (folder / (stem + ext)).write_bytes(data)
+            return "images/%s/%s%s" % (sub, stem, ext)
+        except Exception:
+            time.sleep(1.2 * (attempt + 1))
+    return None
+
+
+def localize(jobs):
+    """jobs: set of (base_url, width, sub). Returns {(base,width,sub): path or None}."""
+    jobs = sorted(jobs)
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        res = list(ex.map(lambda j: fetch_image(*j), jobs))
+    return dict(zip(jobs, res))
+
+
 def main():
     pages = all_pages()
     files = all_files()
@@ -258,7 +301,7 @@ def main():
     out = []
     for i, (title, meta) in enumerate(sorted(pages.items()), 1):
         try:
-            d = api(action="parse", page=title, prop="text|wikitext", redirects=1,
+            d = api(action="parse", page=title, prop="text|wikitext|images", redirects=1,
                     disablelimitreport=1, disableeditsection=1)["parse"]
         except Exception as e:
             print("  skip %s: %s" % (title, e), file=sys.stderr)
@@ -273,10 +316,17 @@ def main():
         img = meta["img"] or find_img(title, files)
         if not img and ref and nkey(re.sub(r"\.[A-Za-z]+$", "", ref.group(1))) in files:
             img = sized(files[nkey(re.sub(r"\.[A-Za-z]+$", "", ref.group(1)))])
+        gal = []
+        for name in d.get("images", []):
+            k = nkey(re.sub(r"\.[A-Za-z]+$", "", name))
+            u = files.get(k)
+            if u and not name.lower().endswith(".gif") and base_url(u) not in gal and (not img or base_url(u) != base_url(img)):
+                gal.append(base_url(u))
         out.append({
             "title": title,
             "cats": sorted(meta["cats"]),
             "img": img,
+            "gallery": gal[:24],
             "summary": summary,
             "html": html,
             "text": text,
@@ -297,8 +347,31 @@ def main():
                     u = find_img(base, files)
                     if u:
                         extra[nkey(base)] = u
+    # ---- download every image into the repo and point the data at the local copies ----
+    mapkey = nkey("Map (All Rings 2.26.26)")
+    jobs = set()
+    for p in out:
+        if p["img"]:
+            jobs.add((base_url(p["img"]), 200, "t"))
+        for g in p["gallery"]:
+            jobs.add((g, 560, "g"))
+    for u in extra.values():
+        jobs.add((base_url(u), 200, "t"))
+    if mapkey in files:
+        jobs.add((base_url(files[mapkey]), 985, "m"))
+    print("downloading %d images (cached ones are skipped)..." % len(jobs), file=sys.stderr)
+    got = localize(jobs)
+    for p in out:
+        p["img"] = got.get((base_url(p["img"]), 200, "t")) if p["img"] else None
+        p["gallery"] = [x for x in (got.get((g, 560, "g")) for g in p["gallery"]) if x]
+    extra = {k: got.get((base_url(u), 200, "t")) for k, u in extra.items()}
+    extra = {k: v for k, v in extra.items() if v}
+    mapimg = got.get((base_url(files[mapkey]), 985, "m")) if mapkey in files else None
+    failed = sum(1 for v in got.values() if not v)
+    print("images ok: %d, failed: %d" % (len(got) - failed, failed), file=sys.stderr)
     OUT.write_text(json.dumps({
         "source": WIKI,
+        "mapImg": mapimg,
         "imgs": extra,
         "built": time.strftime("%Y-%m-%d", time.gmtime()),
         "pages": out,

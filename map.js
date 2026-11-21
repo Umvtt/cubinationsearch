@@ -97,6 +97,9 @@
   /* ----- state ----- */
   let built = false, root, stage, svg, vp, sideEl, coordEl, searchEl, resEl;
   let view = { x: 0, y: 0, k: 1 }, fit = 1, userMoved = false, selId = null, matches = new Set(), anim = 0;
+  let ladderEl, done = new Set();
+  try { done = new Set(JSON.parse(localStorage.getItem("cx-bosses-done") || "[]")); } catch (e) {}
+  const saveDone = () => { try { localStorage.setItem("cx-bosses-done", JSON.stringify([...done])); } catch (e) {} };
   const flags = { boss: true, util: true, rand: true, lock: true, rings: false, heat: false, path: false, photo: false };
 
   const stars = (n) => `<span class="stars" style="--n:${n}" aria-label="${n} out of 5 stars">★★★★★</span>`;
@@ -120,6 +123,7 @@
       g += `<use href="#s-skull" x="18" y="16" width="60" height="60" fill="#f7e4e4"/>`;
       g += `<text x="48" y="14" font-size="${t.name.length <= 8 ? 15 : t.name.length <= 12 ? 13 : t.name.length <= 15 ? 11 : 9.5}">${CX.esc(t.name)}</text>`;
       g += starsSvg(t.stars, 48, 78);
+      g += `<g class="donebadge"><circle cx="82" cy="82" r="13" fill="#37b24d" stroke="#0d0c0a" stroke-width="3"/><path d="M75.500 82.500l4.500 4.500 8.500-10" stroke="#fff" stroke-width="3.500" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`;
       g += `<g class="badge hb"><circle cx="82" cy="14" r="13" fill="#0d0c0a"/><text x="82" y="19" font-size="13">${t.stars}</text></g>`;
       g += `<g class="badge ob"><circle cx="14" cy="14" r="13" fill="#ffd43b"/><text x="14" y="19" font-size="14" style="fill:#1f1c16;stroke:none">${t.order}</text></g>`;
     } else if (t.kind === "util") {
@@ -174,7 +178,7 @@
                 <symbol id="s-sun" viewBox="0 0 24 24"><g stroke-width="1.100" stroke-linejoin="round"><path d="M12 .8l1.800 5.200L18 2.500l-1 5.400 5.200-1.200-3.500 4.200 4.800 2.300-5.400.7 2.500 4.800-5-2 .2 5.400-3.200-4.300-3.200 4.300.2-5.400-5 2L6.500 14l-5.400-.7 4.800-2.300-3.500-4.200L7 7.900 6 2.500l4.200 3.500z" fill="#e9e4d0"/></g><circle cx="12" cy="12" r="3.800" fill="#6c6878" stroke-width="1.600"/></symbol>
               </defs>
               <g id="vp">
-                <image class="photo" href="${IMG_URL}" x="${PAD}" y="${PAD}" width="${IMG}" height="984" preserveAspectRatio="none"/>
+                <image class="photo" href="${CX.mapImg || IMG_URL}" x="${PAD}" y="${PAD}" width="${IMG}" height="984" preserveAspectRatio="none"/>
                 ${labels}
                 <text class="glbl" x="${WORLD / 2}" y="${WORLD - 10}" style="font-size:14px;fill:#ffd43b">▼ S</text>
                 <text class="glbl" x="${WORLD / 2}" y="14" style="font-size:14px;fill:#ffd43b">▲ N</text>
@@ -193,11 +197,12 @@
             <div class="maphint">scroll = zoom · drag = pan · arrows = move</div>
             <div class="coord" id="mcoord">hover an island</div>
           </div>
+          <aside class="ladder" id="mladder" aria-label="Boss order"></aside>
           <aside class="side" id="mside" aria-live="polite"></aside>
         </div>
       </div>`;
     stage = $("#stage"); svg = $("#msvg"); vp = $("#vp"); sideEl = $("#mside"); coordEl = $("#mcoord");
-    searchEl = $("#mapq"); resEl = root.querySelector(".mapres");
+    ladderEl = $("#mladder"); searchEl = $("#mapq"); resEl = root.querySelector(".mapres");
     wire(); built = true;
   }
   const $ = (s) => root.querySelector(s);
@@ -319,9 +324,7 @@
   function homePanel() {
     const E = CX.esc;
     return `<h2>Pick an island</h2>
-      <p>Click any tile. Bosses show their stats, drops and abilities straight from the wiki.</p>
-      <h3>Boss ladder</h3>
-      <ol class="spawnlist" style="list-style:none">${order.map((b) => `<li><button class="chipbtn" data-go="${b.id}" style="width:100%;text-align:left;display:flex;justify-content:space-between;gap:8px"><span>${b.order}. ${E(b.name)}</span>${stars(b.stars)}</button></li>`).join("")}</ol>
+      <p>Click any tile, or pick a boss from the order list. Bosses show their stats, drops and abilities straight from the wiki.</p>
       <div class="legend"><span><i style="background:#b9606c"></i>West</span><span><i style="background:#6f9d84"></i>East</span><span><i style="background:#a39157"></i>South</span><span><i style="background:#8d70b5"></i>Machines</span><span><i style="background:#a79eb1"></i>Random</span></div>
       <p class="src">Keyboard: arrow keys move between islands, + / − zoom, 0 fits the map, Home centres on Spawn.</p>`;
   }
@@ -330,6 +333,27 @@
     sideEl.classList.remove("flash"); void sideEl.offsetWidth; sideEl.classList.add("flash");
     sideEl.querySelectorAll("a[data-t]").forEach((a) => { a.dataset.item = a.dataset.t; a.setAttribute("draggable", "false"); });
     sideEl.scrollTop = 0;
+  }
+
+  /* ----- boss order: always visible, tracks progress ----- */
+  function paintLadder() {
+    const E = CX.esc, next = order.find((b) => !done.has(b.id));
+    const n = done.size, pct = Math.round((n / bosses.length) * 100);
+    ladderEl.innerHTML = `
+      <div class="lhead"><h2>Boss order</h2><span class="lcount">${n}/${bosses.length}</span></div>
+      <div class="lbar" role="progressbar" aria-valuemin="0" aria-valuemax="${bosses.length}" aria-valuenow="${n}"><i style="width:${pct}%"></i></div>
+      <p class="lnext">${next ? `Next up: <button data-go="${next.id}">${E(next.name)}</button>` : "All bosses defeated. Nice."}</p>
+      <ol class="lrows">${order.map((b) => `<li><div class="lrow${b.id === selId ? " cur" : ""}${done.has(b.id) ? " dn" : ""}${next && next.id === b.id ? " nx" : ""}" data-go="${b.id}" role="button" tabindex="0" aria-label="${E(b.name)}, ${b.stars} stars${done.has(b.id) ? ", defeated" : ""}">
+        <span class="ln">${b.order}</span><span class="lm"><b>${E(b.name)}</b>${stars(b.stars)}</span>
+        <button class="ck" data-done="${b.id}" aria-pressed="${done.has(b.id)}" title="${done.has(b.id) ? "Defeated. Click to undo" : "Mark as defeated"}">✓</button></div></li>`).join("")}</ol>
+      <p class="lfoot">Easiest to hardest, by the stars on the in-game map. Ticks are saved in this browser.</p>`;
+    svg.querySelectorAll(".tl.t-boss").forEach((el) => el.classList.toggle("done", done.has(el.dataset.id)));
+  }
+  function toggleDone(id) {
+    done.has(id) ? done.delete(id) : done.add(id);
+    saveDone(); paintLadder();
+    if (done.has(id)) { CX.Snd.success(); const r = ladderEl.querySelector(`[data-done="${id}"]`).getBoundingClientRect(); CX.burst(r.left + r.width / 2, r.top + r.height / 2, 12); } else CX.Snd.drop();
+    if (selId === id) paintSide(byId.get(id));
   }
 
   /* ----- selection ----- */
@@ -344,7 +368,8 @@
       history.replaceState(null, "", "#/map/" + t.id);
       if (window.matchMedia("(max-width: 900px)").matches && fly) setTimeout(() => sideEl.scrollIntoView({ behavior: "smooth", block: "start" }), 450);
     } else history.replaceState(null, "", "#/map");
-    paintSide(t);
+    paintSide(t); paintLadder();
+    const cur = ladderEl.querySelector(".lrow.cur"); if (cur) cur.scrollIntoView({ block: "nearest" });
   }
   const resolve = (arg) => {
     if (!arg) return null;
@@ -465,6 +490,8 @@
     });
     // side panel + search result clicks
     root.addEventListener("click", (e) => {
+      const dn = e.target.closest("[data-done]");
+      if (dn) { e.stopPropagation(); toggleDone(dn.dataset.done); return; }
       const go = e.target.closest("[data-go]");
       if (go) { select(go.dataset.go); resEl.hidden = true; return; }
       const op = e.target.closest("[data-open]");
@@ -473,6 +500,7 @@
       if (a) { e.preventDefault(); CX.Snd.pop(); CX.openItem(a.dataset.t); }
       if (!e.target.closest(".mapsearch")) resEl.hidden = true;
     });
+    ladderEl.addEventListener("keydown", (e) => { const r = e.target.closest(".lrow"); if (r && (e.key === "Enter" || e.key === " ") && !e.target.closest("button")) { e.preventDefault(); select(r.dataset.go); } });
     searchEl.addEventListener("input", () => { CX.Snd.tick(); doSearch(searchEl.value); });
     searchEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { const b = resEl.querySelector("button[data-go]"); if (b) { select(b.dataset.go); resEl.hidden = true; } }
@@ -490,9 +518,10 @@
   /* ----- public: show / hide ----- */
   CX.map.show = (arg) => {
     root = document.getElementById("mapview");
+    document.body.classList.add("wide");
     if (!built) {
       build();
-      requestAnimationFrame(() => { doFit(false); applyFlags(); finish(); });
+      requestAnimationFrame(() => { doFit(false); applyFlags(); paintLadder(); finish(); });
     } else finish();
     function finish() {
       const id = resolve(arg);
@@ -501,5 +530,5 @@
       window.scrollTo(0, 0);
     }
   };
-  CX.map.hide = () => { cancelAnimationFrame(anim); };
+  CX.map.hide = () => { cancelAnimationFrame(anim); document.body.classList.remove("wide"); };
 })();

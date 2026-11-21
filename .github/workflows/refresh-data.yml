@@ -18,5 +18,5 @@ jobs:
         run: |
           git config user.name "wiki-refresh"
           git config user.email "actions@users.noreply.github.com"
-          git add data.json
+          git add data.json images
           git diff --cached --quiet || (git commit -m "Refresh wiki data" && git push)
