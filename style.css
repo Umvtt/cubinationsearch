@@ -232,3 +232,29 @@ footer p { margin: 0; max-width: 70ch; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- extra icons & sound button ---------- */
+.ico-cube, .ico-shield, .ico-sword, .ico-skull, .ico-pack, .ico-bricks, .ico-coil, .ico-ingot, .ico-star, .ico-gear { width: 1.1em; height: 1.1em; vertical-align: -.2em; margin-right: 5px; transform-origin: center; }
+.tag .ico { width: .95em; height: .95em; margin-right: 4px; vertical-align: -.15em; }
+.cats button:hover .ico, .row:hover .tag .ico, .cta:hover .ico { animation: wiggle .5s var(--ease); }
+.cats button[aria-selected="true"] .ico { animation: wiggle .6s var(--ease); }
+@keyframes wiggle { 20% { transform: rotate(-14deg) scale(1.15); } 50% { transform: rotate(12deg) scale(1.15); } 80% { transform: rotate(-5deg); } }
+.ico-gear { animation: spin 7s linear infinite; }
+.ico-star { animation: pulse 2.2s ease-in-out infinite; }
+.ico-coil { animation: boing 1.6s ease-in-out infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { transform: scale(.82) rotate(8deg); } }
+@keyframes boing { 50% { transform: scaleY(.82); } }
+.thumb .ph { width: 58%; height: 58%; margin: 0; color: var(--ink-2); opacity: .45; animation: none; }
+.tile .thumb .ph, .chip .thumb .ph { width: 62%; height: 62%; }
+.snd { margin-left: 4px; background: none; border: 2px solid transparent; color: var(--ink); width: 36px; height: 34px; display: grid; place-items: center; cursor: pointer; transition: border-color .15s, transform .1s; }
+.snd:hover { border-color: var(--ink-2); }
+.snd:active { transform: scale(.9); }
+.snd .ico { width: 21px; height: 21px; margin: 0; }
+.snd .on .w1, .snd.on .w1 { animation: wave 1.4s ease-in-out infinite; }
+.ico-snd.on .w1 { animation: wave 1.4s ease-in-out infinite; }
+.ico-snd.on .w2 { animation: wave 1.4s ease-in-out .25s infinite; }
+@keyframes wave { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.top { flex-wrap: nowrap; }
+.tabs { margin-left: auto; }
+@media (max-width: 600px) { .top { flex-wrap: wrap; } .tabs { margin-left: 0; } .snd { position: absolute; right: 16px; top: 16px; } .top { position: relative; } }

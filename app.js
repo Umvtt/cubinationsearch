@@ -7,7 +7,9 @@
   const QUICK = ["Armor Cube", "Steel Sword", "Regen Coil", "Raider", "Iron Cube"];
 
   let pages = [], byTitle = new Map(), cat = "All", shown = PAGE_SIZE, selected = -1, currentResults = [], showAllCats = false;
-  let recipes = [], ingredients = new Map(); // global recipe index
+  let recipes = [], ingredients = new Map(), extraImgs = {}; // global recipe index
+  const nk = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const imgFor = (name, pg) => (pg && pg.img) || extraImgs[nk(name)] || null;
 
   /* ---------- helpers ---------- */
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -25,11 +27,77 @@
     arrow: '<svg class="ico ico-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h15M12 5l7 7-7 7" stroke="currentColor" stroke-width="2.8" fill="none" stroke-linecap="square"/></svg>',
     spark: '<svg class="ico ico-spark" viewBox="0 0 24 24" aria-hidden="true"><path class="s" d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8z" fill="currentColor"/><path class="s s2" d="M18 14l1 2.6 2.6 1-2.6 1-1 2.6-1-2.6-2.6-1 2.6-1z" fill="currentColor"/></svg>',
   };
+  const ln = (cls, inner) => `<svg class="ico ico-${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">${inner}</svg>`;
+  Object.assign(ICON, {
+    cube: ln("cube", '<path d="M12 2.5l8.5 4.3v10.4L12 21.5l-8.5-4.3V6.8z"/><path d="M3.5 6.8L12 11l8.5-4.2M12 11v10.5"/>'),
+    shield: ln("shield", '<path d="M12 2.5l8 3v6c0 4.8-3.3 8.6-8 10-4.7-1.4-8-5.2-8-10v-6z"/><path d="M12 7v10"/>'),
+    sword: ln("sword", '<path d="M14.5 3.5h6v6L10 20l-3-3z"/><path d="M5 15l4 4M4 20l2-2"/>'),
+    skull: ln("skull", '<path d="M5 12a7 7 0 1 1 14 0c0 2-1 3.2-2 4v3H7v-3c-1-.8-2-2-2-4z"/><circle cx="9.5" cy="12" r="1.3" fill="currentColor"/><circle cx="14.5" cy="12" r="1.3" fill="currentColor"/>'),
+    pack: ln("pack", '<path d="M8 6a4 4 0 0 1 8 0"/><rect x="5" y="6" width="14" height="15" rx="3"/><path d="M9 15h6"/>'),
+    bricks: ln("bricks", '<rect x="3" y="4" width="18" height="16"/><path d="M3 9.3h18M3 14.7h18M9 4v5.3M15 9.3v5.4M9 14.7V20"/>'),
+    coil: ln("coil", '<path d="M12 2l-6 4 12 4-12 4 12 4-6 4"/>'),
+    ingot: ln("ingot", '<path d="M2.5 17.5l3-8h13l3 8z"/><path d="M8 9.5l-1 8M16 9.5l1 8"/>'),
+    star: ln("star", '<path d="M12 2.5l2.9 6 6.6.8-4.9 4.5 1.3 6.5L12 17l-5.9 3.3 1.3-6.5L2.5 9.3l6.6-.8z"/>'),
+    gear: ln("gear", '<circle cx="12" cy="12" r="3.4"/><path d="M12 2.5v3.2M12 18.3v3.2M2.5 12h3.2M18.3 12h3.2M5.3 5.3l2.3 2.3M16.4 16.4l2.3 2.3M18.7 5.3l-2.3 2.3M7.6 16.4l-2.3 2.3"/>'),
+    on: ln("snd on", '<path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path class="w1" d="M16 9.2c1.3 1.7 1.3 4.1 0 5.6"/><path class="w2" d="M18.7 6.6c3 3 3 7.8 0 10.8"/>'),
+    off: ln("snd off", '<path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M17 9.5l5 5M22 9.5l-5 5"/>'),
+  });
+  const CAT_ICON = { Armor: "shield", Cubes: "cube", "Natural Cubes": "cube", Weapons: "sword", Equipment: "pack", Enemies: "skull", Bosses: "skull", Islands: "island", Structures: "bricks", Coils: "coil", Ingots: "ingot", Features: "star", "Sandbox Exclusives": "star", "Island Mechanics": "gear", "Game Mechanics": "gear", "Menu Mechanics": "gear" };
+  const catIcon = (c) => ICON[CAT_ICON[c] || "cube"];
+  const PH = ICON.cube.replace('class="ico ico-cube"', 'class="ico ph"');
   const METHOD = {
     combine: [ICON.link, "Combine"],
     furnace: [ICON.flame, "Furnace"],
     other: [ICON.island, "Found"],
   };
+
+  /* ---------- sound (tiny synthesized blips, no audio files) ---------- */
+  const Snd = (() => {
+    let ctx = null, on = true;
+    try { on = localStorage.getItem("cx-sound") !== "off"; } catch (e) {}
+    const get = () => {
+      if (!on) return null;
+      try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); if (ctx.state === "suspended") ctx.resume(); return ctx; } catch (e) { return null; }
+    };
+    function tone(f, dur = .08, type = "square", vol = .035, when = 0, slide = 1) {
+      const c = get(); if (!c) return;
+      const t = c.currentTime + when, o = c.createOscillator(), g = c.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t);
+      if (slide !== 1) o.frequency.exponentialRampToValueAtTime(f * slide, t + dur);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+      o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + .02);
+    }
+    let lastTick = 0;
+    return {
+      get on() { return on; },
+      toggle() { on = !on; try { localStorage.setItem("cx-sound", on ? "on" : "off"); } catch (e) {} if (on) this.click(); return on; },
+      click() { tone(520, .06, "square", .03, 0, .7); },
+      nav() { tone(300, .07, "square", .035, 0, 1.7); tone(450, .07, "square", .03, .05, 1.3); },
+      tick() { const n = performance.now(); if (n - lastTick > 55) { lastTick = n; tone(1000 + Math.random() * 200, .025, "square", .012); } },
+      pop() { tone(360, .1, "triangle", .06, 0, 2.2); },
+      drop() { tone(520, .1, "triangle", .05, 0, .45); },
+      success() { [523, 659, 784, 1047].forEach((f, i) => tone(f, .14, "triangle", .05, i * .07)); },
+      nope() { tone(170, .2, "sawtooth", .035, 0, .6); },
+      sparkle() { [880, 1175, 1568, 2093, 1760].forEach((f, i) => tone(f, .12, "sine", .04, i * .05)); },
+    };
+  })();
+  const sndBtn = document.createElement("button");
+  sndBtn.id = "snd"; sndBtn.className = "snd";
+  const paintSnd = () => { sndBtn.innerHTML = Snd.on ? ICON.on : ICON.off; sndBtn.setAttribute("aria-pressed", Snd.on); sndBtn.title = Snd.on ? "Sound on (click to mute)" : "Sound off"; sndBtn.setAttribute("aria-label", sndBtn.title); };
+  paintSnd();
+  document.querySelector(".top").appendChild(sndBtn);
+  sndBtn.addEventListener("click", (e) => { e.stopPropagation(); Snd.toggle(); paintSnd(); });
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#snd")) return;
+    if (e.target.closest("a.row, a.tile, a.cta, .tabs a, .back, .body a, .brand")) Snd.nav();
+    else if (e.target.closest("[data-add], [data-rm]")) { /* played by the craft view */ }
+    else if (e.target.closest("button")) Snd.click();
+  });
+  // an image that fails to load becomes the placeholder instead of a broken icon
+  document.addEventListener("error", (e) => {
+    const i = e.target;
+    if (i && i.tagName === "IMG" && i.closest(".thumb")) i.parentElement.innerHTML = PH;
+  }, true);
 
   /* ---------- load ---------- */
   list.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
@@ -41,6 +109,7 @@
       _r: norm(p.recipes.map((r) => r.raw).join(" ")), _x: norm(p.text),
     }));
     pages.forEach((p) => byTitle.set(p._t, p));
+    extraImgs = d.imgs || {};
     buildRecipeIndex();
     $("#wikilink").href = d.source;
     $("#built").textContent = "Data last refreshed " + d.built + ".";
@@ -79,7 +148,8 @@
     const [main, alt] = splitAlt(name);
     const pg = pageFor(main, target);
     const key = norm(pg ? pg.title : main);
-    const img = pg && pg.img ? `<img src="${esc(pg.img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : esc(main[0] || "?");
+    const u = imgFor(main, pg);
+    const img = u ? `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : PH;
     const inner = `<span class="thumb sm">${img}</span><span class="cap">${esc(main)}${alt ? `<small>or ${esc(alt)}</small>` : ""}</span>`;
     const c = `tile ${cls}${hiKey && key === hiKey ? " hi" : ""}`;
     return pg ? `<a class="${c}" href="#/${slug(pg.title)}" title="${esc(pg.title)}">${inner}</a>` : `<span class="${c}">${inner}</span>`;
@@ -102,7 +172,7 @@
   }
   quickEl.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
-    if (b.dataset.random !== undefined) { const p = pages[Math.floor(Math.random() * pages.length)]; location.hash = "#/" + slug(p.title); return; }
+    if (b.dataset.random !== undefined) { Snd.sparkle(); const p = pages[Math.floor(Math.random() * pages.length)]; location.hash = "#/" + slug(p.title); return; }
     q.value = b.dataset.q; shown = PAGE_SIZE; render(); q.focus();
   });
 
@@ -112,7 +182,7 @@
     const rest = Object.entries(counts).filter(([c, n]) => n >= 3 && !MAIN_CATS.includes(c)).sort((a, b) => b[1] - a[1]);
     const main = MAIN_CATS.filter((c) => counts[c]).map((c) => [c, counts[c]]);
     const items = [["All", pages.length], ...main, ...(showAllCats ? rest : [])];
-    catsEl.innerHTML = items.map(([c, n]) => `<button role="tab" aria-selected="${c === cat}" data-c="${esc(c)}">${esc(c)}<span>${n}</span></button>`).join("") +
+    catsEl.innerHTML = items.map(([c, n]) => `<button role="tab" aria-selected="${c === cat}" data-c="${esc(c)}">${c === "All" ? "" : catIcon(c)}${esc(c)}<span>${n}</span></button>`).join("") +
       (rest.length ? `<button class="more" data-more>${showAllCats ? "fewer −" : "more +"}</button>` : "");
   }
   catsEl.addEventListener("click", (e) => {
@@ -172,9 +242,11 @@
     return out;
   }
 
-  const thumb = (p, cls = "") => p && p.img
-    ? `<div class="thumb ${cls}"><img src="${esc(p.img)}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>`
-    : `<div class="thumb ${cls}">${esc((p && p.title[0]) || "?")}</div>`;
+  const thumb = (p, cls = "") => {
+    const u = p && imgFor(p.title, p);
+    return u ? `<div class="thumb ${cls}"><img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>` : `<div class="thumb ${cls}">${PH}</div>`;
+  };
+  const tagHtml = (c) => `<span class="tag">${catIcon(c)}${esc(c)}</span>`;
 
   function snippet(p, terms) {
     const text = noEmoji(p.text), lower = text.toLowerCase();
@@ -201,13 +273,14 @@
       `<div class="meta"><span>${currentResults.length} result${currentResults.length === 1 ? "" : "s"}${cat !== "All" ? " in " + esc(cat) : ""}</span></div>` +
       slice.map((p, i) => `<a class="row" style="--i:${Math.min(i, 12)}" href="#/${slug(p.title)}">${thumb(p)}<div>
         <h3>${hl(p.title, terms)}</h3>
-        <div class="tags">${p.cats.slice(0, 3).map((c) => `<span class="tag">${esc(c)}</span>`).join("")}</div>
+        <div class="tags">${p.cats.slice(0, 3).map(tagHtml).join("")}</div>
         <p>${hl(snippet(p, terms), terms)}</p></div><span class="go">${ICON.arrow}</span></a>`).join("") +
       (currentResults.length > shown ? `<button class="morebtn">Show more (${currentResults.length - shown})</button>` : "");
     list.querySelector(".morebtn")?.addEventListener("click", () => { shown += PAGE_SIZE; render(); });
   }
 
   q.addEventListener("input", () => {
+    Snd.tick();
     shown = PAGE_SIZE;
     if (location.hash.length > 2) { history.replaceState(null, "", "#/"); route(); } else render();
   });
@@ -256,7 +329,7 @@
     pageEl.innerHTML = `
       <a class="back" href="#/">&larr; back to search</a>
       <div class="head">${thumb(p)}<div><h1>${esc(p.title)}</h1>
-        <div class="tags">${p.cats.map((c) => `<span class="tag">${esc(c)}</span>`).join("")}</div>
+        <div class="tags">${p.cats.map(tagHtml).join("")}</div>
         ${uses.length ? `<a class="cta" href="#/craft/${slug(p.title)}">${ICON.spark} What can I craft with this?</a>` : ""}</div></div>
       ${makes.length ? `<h2 class="sec">${ICON.link} How to get it <small>${makes.length}</small></h2>${grid(makes, me)}` : ""}
       ${uses.length ? `<h2 class="sec">${ICON.flame} What it’s used for <small>${uses.length}</small></h2>${grid(uses, me)}` : ""}
@@ -266,7 +339,7 @@
   }
 
   /* ---------- craft finder ---------- */
-  let picked = []; // ingredient keys
+  let picked = [], lastCraft = ""; // ingredient keys
 
   function showCraft(keys) {
     picked = keys;
@@ -288,6 +361,10 @@
       }
       if (getIt.length) results += `<h2 class="sec">${ICON.link} How to get ${esc(chips[0].label)} <small>${getIt.length}</small></h2>${grid(getIt, picked[0])}`;
     }
+    if (chips.length && picked.join() !== lastCraft) {
+      setTimeout(() => (picked.length > 1 ? recipes.some((r) => picked.every((k) => r._in.includes(k))) : recipes.some((r) => r._in.includes(picked[0]) || r._out === picked[0])) ? Snd.success() : Snd.nope(), 120);
+    }
+    lastCraft = picked.join();
     craftEl.innerHTML = `
       <div class="panel">
         <h1>What can I craft?</h1>
@@ -296,13 +373,14 @@
           <input id="craftin" class="craftin" type="text" autocomplete="off" spellcheck="false" placeholder="Start typing: iron cube, wood cube…">
           <div class="sugg" hidden></div>
         </div>
-        <div class="chips">${chips.map((c) => `<span class="chip">${thumb(c.page, "")}${esc(c.label)}<button data-rm="${esc(c.key)}" aria-label="Remove ${esc(c.label)}">×</button></span>`).join("")}</div>
+        <div class="chips">${chips.map((c) => `<span class="chip">${thumb(c.page || { title: c.label }, "")}${esc(c.label)}<button data-rm="${esc(c.key)}" aria-label="Remove ${esc(c.label)}">×</button></span>`).join("")}</div>
         ${chips.length ? "" : `<div class="hint">Popular ingredients</div><div class="tryrow">${popular.map((c) => `<button class="chipbtn" data-add="${esc(c.key)}">${esc(c.label)}</button>`).join("")}</div>`}
       </div>${results}`;
     wireCraft();
   }
 
-  function setPicked(keys) { location.hash = "#/craft" + (keys.length ? "/" + keys.map((k) => slug(ingredients.get(k).label)).join("~") : ""); }
+  function setPicked(keys) {
+    keys.length > picked.length ? Snd.pop() : Snd.drop(); location.hash = "#/craft" + (keys.length ? "/" + keys.map((k) => slug(ingredients.get(k).label)).join("~") : ""); }
 
   function wireCraft() {
     const input = $("#craftin"), box = craftEl.querySelector(".sugg");
@@ -313,7 +391,7 @@
         .sort((a, b) => (b.key.startsWith(t) - a.key.startsWith(t)) || b.count - a.count).slice(0, 8);
       sel = 0;
       box.hidden = !opts.length || (!t && document.activeElement !== input);
-      box.innerHTML = opts.map((e, i) => `<button data-add="${esc(e.key)}" class="${i === 0 ? "sel" : ""}">${thumb(e.page)}${esc(e.label)}<small>${e.count} recipe${e.count > 1 ? "s" : ""}</small></button>`).join("");
+      box.innerHTML = opts.map((e, i) => `<button data-add="${esc(e.key)}" class="${i === 0 ? "sel" : ""}">${thumb(e.page || { title: e.label })}${esc(e.label)}<small>${e.count} recipe${e.count > 1 ? "s" : ""}</small></button>`).join("");
     };
     input.addEventListener("input", open);
     input.addEventListener("focus", open);

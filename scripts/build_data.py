@@ -214,8 +214,43 @@ def all_pages():
     return pages
 
 
+def sized(url, w=160):
+    return url.replace("/revision/latest", "/revision/latest/scale-to-width-down/%d" % w, 1) if "/revision/latest" in url and "scale-to-width" not in url else url
+
+
+def nkey(s):
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def all_files():
+    """Every uploaded image: normalised name -> url."""
+    files, cont = {}, {}
+    while True:
+        d = api(action="query", list="allimages", ailimit=500, **cont)
+        for i in d["query"]["allimages"]:
+            if i["name"].lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                files.setdefault(nkey(re.sub(r"\.[A-Za-z]+$", "", i["name"])), i["url"])
+        if "continue" not in d:
+            break
+        cont = d["continue"]
+    return files
+
+
+def find_img(name, files):
+    """Try the name itself, then common wiki naming variants."""
+    base = re.sub(r"\s*\(.*", "", name).strip()
+    cands = [base, base + " Cube", re.sub(r"\s*Cube$", "", base, flags=re.I), base + " Ingot",
+             re.sub(r"\s*Ingot$", "", base, flags=re.I), base.rstrip("s"), base + " Sword"]
+    for c in cands:
+        if c and nkey(c) in files:
+            return sized(files[nkey(c)])
+    return None
+
+
 def main():
     pages = all_pages()
+    files = all_files()
+    print("found %d image files" % len(files), file=sys.stderr)
     print("found %d articles" % len(pages), file=sys.stderr)
     out = []
     for i, (title, meta) in enumerate(sorted(pages.items()), 1):
@@ -231,10 +266,14 @@ def main():
             continue
         # first sentence-ish summary
         summary = re.sub(r"\s+", " ", text)[:220]
+        ref = re.search(r"\[\[(?:File|Image):([^|\]]+)", wt)
+        img = meta["img"] or find_img(title, files)
+        if not img and ref and nkey(re.sub(r"\.[A-Za-z]+$", "", ref.group(1))) in files:
+            img = sized(files[nkey(re.sub(r"\.[A-Za-z]+$", "", ref.group(1)))])
         out.append({
             "title": title,
             "cats": sorted(meta["cats"]),
-            "img": meta["img"],
+            "img": img,
             "summary": summary,
             "html": html,
             "text": text,
@@ -244,8 +283,20 @@ def main():
             print("  %d/%d" % (i, len(pages)), file=sys.stderr)
         time.sleep(0.15)
 
+    # images for names that appear in recipes but have no article of their own
+    titles = {nkey(p["title"]) for p in out}
+    extra = {}
+    for p in out:
+        for r in p["recipes"]:
+            for n in r["from"] + [r["to"]]:
+                base = re.sub(r"\s*\(.*", "", n).strip()
+                if base and nkey(base) not in titles and nkey(base) not in extra:
+                    u = find_img(base, files)
+                    if u:
+                        extra[nkey(base)] = u
     OUT.write_text(json.dumps({
         "source": WIKI,
+        "imgs": extra,
         "built": time.strftime("%Y-%m-%d", time.gmtime()),
         "pages": out,
     }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
